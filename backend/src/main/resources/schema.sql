@@ -5,5 +5,7 @@ CREATE TABLE device (
     code VARCHAR(50) NOT NULL UNIQUE,
     name VARCHAR(100) NOT NULL,
     status VARCHAR(20) NOT NULL,
+    disable_reason VARCHAR(200),
+    disabled_at TIMESTAMP,
     created_at TIMESTAMP NOT NULL
 );

@@ -59,12 +59,17 @@
           :data="devices"
           empty-text="暂无设备数据"
           stripe
+          :row-class-name="rowClassName"
         >
           <el-table-column prop="code" label="设备编号" min-width="160" />
           <el-table-column prop="name" label="设备名称" min-width="260" />
           <el-table-column label="状态" width="130">
             <template #default="{ row }">
-              <el-tag :type="row.status === 'NORMAL' ? 'success' : 'info'" effect="light">
+              <el-tag
+                :type="row.status === 'NORMAL' ? 'success' : 'danger'"
+                :effect="row.status === 'NORMAL' ? 'light' : 'dark'"
+                round
+              >
                 {{ statusText(row.status) }}
               </el-tag>
             </template>
@@ -72,9 +77,16 @@
           <el-table-column label="创建时间" min-width="190">
             <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="140" fixed="right">
+          <el-table-column label="操作" width="170" fixed="right">
             <template #default="{ row }">
               <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+              <el-button
+                v-if="row.status === 'NORMAL'"
+                link
+                type="danger"
+                @click="openDisable(row)"
+              >停用</el-button>
+              <span v-else class="op-muted">已停用</span>
             </template>
           </el-table-column>
         </el-table>
@@ -105,13 +117,63 @@
         <el-button type="primary" :loading="saving" @click="save">保存</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="disableDialogVisible"
+      width="480px"
+      destroy-on-close
+      class="disable-dialog"
+      :close-on-click-modal="false"
+    >
+      <template #header>
+        <div class="disable-header">
+          <div class="disable-icon">!</div>
+          <div>
+            <strong>停用设备确认</strong>
+            <span>设备停用后将无法再次停用，请谨慎操作</span>
+          </div>
+        </div>
+      </template>
+
+      <div class="disable-summary">
+        <div class="disable-summary-item">
+          <label>设备编号</label>
+          <strong>{{ disablingDevice?.code }}</strong>
+        </div>
+        <div class="disable-summary-item">
+          <label>设备名称</label>
+          <strong>{{ disablingDevice?.name }}</strong>
+        </div>
+      </div>
+
+      <el-form label-position="top" @submit.prevent>
+        <el-form-item label="停用原因" required>
+          <el-input
+            v-model="disableReason"
+            type="textarea"
+            :rows="4"
+            maxlength="200"
+            show-word-limit
+            resize="none"
+            placeholder="请填写停用原因，例如：设备老化、故障无法修复、达到使用年限等"
+          />
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="disableDialogVisible = false">取消</el-button>
+        <el-button type="danger" :loading="disabling" @click="confirmDisable">
+          确认停用
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { createDevice, getDevices, updateDevice } from '../api/device'
+import { createDevice, disableDevice, getDevices, updateDevice } from '../api/device'
 import { getApiErrorMessage } from '../api/http'
 import { getHealth } from '../api/system'
 import type { Device, DeviceForm } from '../types/device'
@@ -123,6 +185,11 @@ const dialogVisible = ref(false)
 const editingId = ref<number | null>(null)
 const apiState = ref<'checking' | 'online' | 'offline'>('checking')
 const form = reactive<DeviceForm>({ code: '', name: '' })
+
+const disableDialogVisible = ref(false)
+const disabling = ref(false)
+const disablingDevice = ref<Device | null>(null)
+const disableReason = ref('')
 
 const normalCount = computed(() => devices.value.filter((item) => item.status === 'NORMAL').length)
 const apiStateText = computed(() => {
@@ -166,6 +233,41 @@ function openEdit(device: Device) {
   dialogVisible.value = true
 }
 
+function openDisable(device: Device) {
+  if (device.status !== 'NORMAL') {
+    ElMessage.warning('仅正常状态的设备可以停用')
+    return
+  }
+  disablingDevice.value = device
+  disableReason.value = ''
+  disableDialogVisible.value = true
+}
+
+async function confirmDisable() {
+  const reason = disableReason.value.trim()
+  if (!reason) {
+    ElMessage.warning('请填写停用原因')
+    return
+  }
+  if (reason.length > 200) {
+    ElMessage.warning('停用原因不能超过 200 个字符')
+    return
+  }
+  if (!disablingDevice.value) return
+
+  disabling.value = true
+  try {
+    await disableDevice(disablingDevice.value.id, { reason })
+    ElMessage.success('设备已停用')
+    disableDialogVisible.value = false
+    await loadDevices()
+  } catch (error) {
+    ElMessage.error(getApiErrorMessage(error, '设备停用失败'))
+  } finally {
+    disabling.value = false
+  }
+}
+
 async function save() {
   if (!form.code.trim() || !form.name.trim()) {
     ElMessage.warning('请填写设备编号和设备名称')
@@ -197,7 +299,13 @@ async function save() {
 }
 
 function statusText(status: string) {
-  return status === 'NORMAL' ? '正常' : status
+  if (status === 'NORMAL') return '正常'
+  if (status === 'DISABLED') return '已停用'
+  return status
+}
+
+function rowClassName({ row }: { row: Device }) {
+  return row.status === 'DISABLED' ? 'row-disabled' : ''
 }
 
 function formatTime(value: string) {
