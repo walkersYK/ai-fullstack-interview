@@ -28,4 +28,9 @@ public class DeviceController {
     public Device update(@PathVariable Long id, @Valid @RequestBody DeviceRequest request) {
         return deviceService.update(id, request);
     }
+
+    @PostMapping("/{id}/disable")
+    public Device disable(@PathVariable Long id, @Valid @RequestBody DeviceDisableRequest request) {
+        return deviceService.disable(id, request);
+    }
 }

@@ -10,6 +10,7 @@ import java.util.List;
 @Service
 public class DeviceService {
     public static final String STATUS_NORMAL = "NORMAL";
+    public static final String STATUS_DISABLED = "DISABLED";
 
     private final DeviceMapper deviceMapper;
 
@@ -48,6 +49,25 @@ public class DeviceService {
 
         device.setCode(code);
         device.setName(name);
+        deviceMapper.updateById(device);
+        return device;
+    }
+
+    @Transactional
+    public Device disable(Long id, DeviceDisableRequest request) {
+        Device device = requireDevice(id);
+        if (!STATUS_NORMAL.equals(device.getStatus())) {
+            throw new IllegalArgumentException("仅正常状态的设备可以停用");
+        }
+
+        String reason = request.reason().trim();
+        if (reason.isEmpty()) {
+            throw new IllegalArgumentException("停用原因不能为空");
+        }
+
+        device.setStatus(STATUS_DISABLED);
+        device.setDisableReason(reason);
+        device.setDisabledAt(LocalDateTime.now());
         deviceMapper.updateById(device);
         return device;
     }

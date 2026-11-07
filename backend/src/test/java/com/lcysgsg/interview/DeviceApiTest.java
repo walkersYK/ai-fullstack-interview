@@ -73,4 +73,62 @@ class DeviceApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("主变温度采集器（更新）"));
     }
+
+    @Test
+    void shouldDisableNormalDevice() throws Exception {
+        mockMvc.perform(post("/api/devices/1/disable")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"设备老化，达到使用年限\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DISABLED"))
+                .andExpect(jsonPath("$.disableReason").value("设备老化，达到使用年限"))
+                .andExpect(jsonPath("$.disabledAt").exists());
+    }
+
+    @Test
+    void shouldRejectDisablingDisabledDevice() throws Exception {
+        mockMvc.perform(post("/api/devices/1/disable")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"首次停用\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/devices/1/disable")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"重复停用\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("BUSINESS_ERROR"));
+    }
+
+    @Test
+    void shouldRejectBlankDisableReason() throws Exception {
+        mockMvc.perform(post("/api/devices/1/disable")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"   \"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
+    @Test
+    void shouldRejectTooLongDisableReason() throws Exception {
+        String longReason = "a".repeat(201);
+        mockMvc.perform(post("/api/devices/1/disable")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"" + longReason + "\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
+    @Test
+    void shouldReturnDisableInfoInListAfterDisabled() throws Exception {
+        mockMvc.perform(post("/api/devices/2/disable")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"故障无法修复\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/devices"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.id==2)].status").value("DISABLED"))
+                .andExpect(jsonPath("$[?(@.id==2)].disableReason").value("故障无法修复"))
+                .andExpect(jsonPath("$[?(@.id==2)].disabledAt").exists());
+    }
 }
